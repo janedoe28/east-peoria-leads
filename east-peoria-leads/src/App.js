@@ -1,4 +1,5 @@
-import { useState, useEffect } from "react";
+/* eslint-disable no-unused-vars */
+import { useState, useEffect, useCallback } from "react";
 import { supabase } from "./supabase";
 
 const CATEGORIES = ["All", "Appliance Repair", "Auto Sales", "Auto Services", "Bar & Entertainment", "Bar/Restaurant", "Cleaning Services", "Coffee Shop", "Construction", "Entertainment", "Food & Bakery", "Hair & Beauty", "Home Improvement", "Home Services", "HVAC", "Landscaping", "Nail Salon", "Plumbing", "Recreation", "Restaurant", "Restaurant/Bar", "Retail", "Tech Services", "Transportation"];
@@ -75,18 +76,30 @@ export default function App() {
   const [showScrubbed, setShowScrubbed] = useState(false);
   const [saving, setSaving] = useState(false);
 
-  useEffect(() => { fetchLeads(); }, []);
-
-  async function fetchLeads() {
+  const fetchLeads = useCallback(async () => {
     setLoading(true);
     const { data, error } = await supabase.from("leads").select("*").order("created_at", { ascending: true });
-    if (!error && data.length === 0) await seedLeads();
-    else if (!error) setLeads(data);
+    if (!error && data.length === 0) {
+      await seedLeads();
+    } else if (!error) {
+      setLeads(data);
+    }
     setLoading(false);
-  }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    fetchLeads();
+  }, [fetchLeads]);
 
   async function seedLeads() {
-    const rows = SEED_BUSINESSES.map(b => ({ name: b.name, category: b.category, status: "Uncontacted", priority: "Medium", verify_status: "Unverified", notes: "" }));
+    const rows = SEED_BUSINESSES.map(b => ({
+      name: b.name,
+      category: b.category,
+      status: "Uncontacted",
+      priority: "Medium",
+      verify_status: "Unverified",
+      notes: ""
+    }));
     const { data } = await supabase.from("leads").insert(rows).select();
     if (data) setLeads(data);
   }
@@ -112,14 +125,24 @@ export default function App() {
     try {
       const parsed = JSON.parse(importText);
       if (!Array.isArray(parsed)) throw new Error("Must be a JSON array");
-      const rows = parsed.map(b => ({ name: b.name, category: b.category || "General", status: "Uncontacted", priority: "Medium", verify_status: "Unverified", notes: "" }));
+      const rows = parsed.map(b => ({
+        name: b.name,
+        category: b.category || "General",
+        status: "Uncontacted",
+        priority: "Medium",
+        verify_status: "Unverified",
+        notes: ""
+      }));
       const { data, error } = await supabase.from("leads").insert(rows).select();
       if (error) throw new Error(error.message);
       setLeads(prev => [...prev, ...data]);
       setImportText("");
       setShowImport(false);
-    } catch (e) { setImportError(e.message); }
-    finally { setImporting(false); }
+    } catch (e) {
+      setImportError(e.message);
+    } finally {
+      setImporting(false);
+    }
   }
 
   function exportCSV() {
@@ -127,14 +150,25 @@ export default function App() {
     const headers = ["Name", "Category", "Status", "Priority", "Notes"];
     const rows = active.map(l => [l.name, l.category, l.status, l.priority, l.notes].map(v => `"${v || ""}"`).join(","));
     const blob = new Blob([[headers.join(","), ...rows].join("\n")], { type: "text/csv" });
-    const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = "clean-leads.csv"; a.click();
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "clean-leads.csv";
+    a.click();
   }
 
-  function openDetail(lead) { setSelected(lead); setNoteText(lead.notes || ""); setAiMessage(""); setAiError(""); }
+  function openDetail(lead) {
+    setSelected(lead);
+    setNoteText(lead.notes || "");
+    setAiMessage("");
+    setAiError("");
+  }
 
-  function getVerify(lead) { return lead.verify_status || lead.verifyStatus || "Unverified"; }
+  function getVerify(lead) {
+    return lead.verify_status || lead.verifyStatus || "Unverified";
+  }
 
   const activeLeads = leads.filter(l => getVerify(l) !== "🌐 Has Website" && getVerify(l) !== "🚫 Permanently Closed");
+
   const filtered = leads.filter(b => {
     const v = getVerify(b);
     if (!showScrubbed && (v === "🌐 Has Website" || v === "🚫 Permanently Closed")) return false;
@@ -151,77 +185,120 @@ export default function App() {
     hasWebsite: leads.filter(l => getVerify(l) === "🌐 Has Website").length,
     closed: leads.filter(l => getVerify(l) === "🚫 Permanently Closed").length,
   };
+
   const progressPct = leads.length ? Math.round((leads.length - stats.unverified) / leads.length * 100) : 0;
 
   async function generateOutreach() {
     if (!selected) return;
-    setAiLoading(true); setAiError(""); setAiMessage("");
-   
+    setAiLoading(true);
+    setAiError("");
+    setAiMessage("");
+
+    const businessName = selected.name;
+    const businessCategory = selected.category;
+
     const channelInstructions = {
-      "Cold Email": `Write a cold email with:
-  - Subject line on the first line starting with "Subject: "
-  - A blank line after the subject
-  - Opening that references something specific about their ${selected.category} business
-  - 2-3 short paragraphs max, no fluff
-  - A specific call to action asking for a 15-minute call this week
-  - Professional but warm sign-off with sender name
-  - Total length: under 150 words`,
-   
-      "Phone Script": `Write a phone call script with:
-  - An opening line that gets past "who is this?"
-  - A clear 1-sentence value statement
-  - One open-ended question to get them talking
-  - A response to the objection "I don't think I need a website"
-  - A response to the objection "I can't afford it right now"
-  - A closing that books a specific next step
-  - Format with labels like OPENER:, VALUE STATEMENT:, QUESTION:, OBJECTION 1:, OBJECTION 2:, CLOSE:`,
-   
-      "Door Knock Script": `Write a door knock script with:
-  - An opening that doesn't sound like a salesperson — sound like a neighbor
-  - Reference something you "noticed" about their business in passing
-  - One question that makes them think about customers they're missing
-  - A way to leave something behind if they're busy (a card, a note)
-  - Keep it under 60 seconds to read aloud
-  - Conversational, no jargon, no pitch energy`,
-   
-      "SMS / Text": `Write 3 different SMS text messages:
-  - Each must be under 160 characters
-  - Each takes a different angle: 1) curiosity, 2) social proof, 3) direct offer
-  - No links, no emojis unless they feel natural
-  - Sound like a real person texting, not a marketing blast
-  - Label them TEXT 1:, TEXT 2:, TEXT 3:`,
-   
-      "Facebook DM": `Write a Facebook DM message with:
-  - Opening that references their Facebook page or something they posted
-  - Casual, friendly tone — like messaging someone you kind of know
-  - One specific pain point relevant to ${selected.category} businesses
-  - Soft CTA — not "buy now" but "would you be open to a quick chat?"
-  - Under 100 words
-  - No formal sign-off, just a first name`,
+      "Cold Email":
+`Write a cold email. Use this exact structure:
+Line 1: Subject: [write a compelling subject line]
+Line 2: blank
+Line 3-end: the email body
+
+Rules:
+- Open by referencing a real challenge for ${businessCategory} businesses specifically
+- Mention that they have no website and what that costs them daily
+- Keep it under 150 words total
+- End with one clear ask: a 15-minute call this week
+- Sign off with ${yourName || "[Your Name]"}
+- Warm and local, not corporate`,
+
+      "Phone Script":
+`Write a phone call script. Use this exact structure with these exact labels on separate lines:
+
+OPENER:
+[what to say in the first 5 seconds]
+
+VALUE STATEMENT:
+[one sentence on what you do and why it matters to them]
+
+QUESTION:
+[one open question to get them talking about their business]
+
+OBJECTION 1 - "I don't need a website":
+[your response]
+
+OBJECTION 2 - "I can't afford it":
+[your response]
+
+CLOSE:
+[how to book the next step]
+
+Make it natural and conversational for a ${businessCategory} business owner in East Peoria.`,
+
+      "Door Knock Script":
+`Write a door knock script for visiting ${businessName} in person.
+
+Rules:
+- Sound like a neighbor, not a salesperson
+- Open with something you "noticed" about their ${businessCategory} business
+- Ask one question that makes them think about customers they might be missing
+- Keep it short — under 60 seconds to read aloud
+- Include what to say if they're busy and you need to leave
+- No pitch language, no jargon, just real talk`,
+
+      "SMS / Text":
+`Write exactly 3 SMS text messages. Use this exact format:
+
+TEXT 1 (Curiosity angle):
+[message under 160 characters]
+
+TEXT 2 (Social proof angle):
+[message under 160 characters]
+
+TEXT 3 (Direct offer angle):
+[message under 160 characters]
+
+Rules:
+- Each must be under 160 characters
+- Sound like a real person, not a marketing blast
+- No links
+- Sign with ${yourName || "[Your Name]"}`,
+
+      "Facebook DM":
+`Write a Facebook DM to send to ${businessName}.
+
+Rules:
+- Open like you've seen their Facebook page — reference it naturally
+- Keep it casual, like messaging someone you kind of know
+- Mention one specific pain point for ${businessCategory} businesses with no website
+- End with a soft question like "would you be open to a quick chat?"
+- Under 100 words
+- Sign with just a first name: ${yourName || "[Your Name]"}
+- No formal language, no bullet points, just natural sentences`,
     };
-   
-    const prompt = `You are an expert local business sales copywriter specializing in getting small businesses their first website. You know East Peoria, Illinois well — it's a working class river town where people value straight talk and local connection over corporate polish.
-   
-  Business you are writing for:
-  - Name: ${selected.name}
-  - Industry: ${selected.category}
-  - Location: East Peoria, IL
-  - Website status: NONE — they have zero online presence
-  ${yourName ? `- Person reaching out: ${yourName}` : "- Use [Your Name] as placeholder"}
-  ${extraContext ? `- Important context: ${extraContext}` : ""}
-   
-  The goal of this outreach is to start a conversation — not close a sale. Get them to agree to 10 minutes of their time.
-   
-  Key pain points for a ${selected.category} business with no website:
-  - Competitors are showing up on Google and they are not
-  - People search before they visit — if you're not there, you don't exist
-  - Word of mouth alone has a ceiling
-  - They are leaving money on the table every single day
-   
-  ${channelInstructions[outreachType]}
-   
-  Write ONLY the requested content. No preamble, no explanation, no meta-commentary. Just the script or message, ready to use.`;
-   
+
+    const prompt = `You are an expert local business sales copywriter who specializes in helping people sell website design services to small businesses in East Peoria, Illinois. East Peoria is a working class river town — people value straight talk, local connection, and no corporate nonsense.
+
+You are writing outreach for this specific business:
+- Business Name: ${businessName}
+- Industry: ${businessCategory}
+- Location: East Peoria, IL
+- Website status: ZERO online presence — no website at all
+- Person reaching out: ${yourName || "[Your Name]"}
+${extraContext ? `- Additional context about this business: ${extraContext}` : ""}
+
+The goal is to start a conversation and get 10 minutes of their time — NOT to close a sale on the first contact.
+
+Core pain points to weave in naturally:
+- Their competitors show up on Google, they do not
+- People search online before visiting any local business
+- Every day without a website is customers going to someone else
+- Word of mouth alone has a hard ceiling on growth
+
+${channelInstructions[outreachType]}
+
+IMPORTANT: Write ONLY the requested script or message. Do not include any introduction, explanation, or commentary before or after. Start directly with the content.`;
+
     try {
       const res = await fetch("https://api.anthropic.com/v1/messages", {
         method: "POST",
@@ -234,13 +311,20 @@ export default function App() {
       });
       const data = await res.json();
       if (data.error) throw new Error(data.error.message);
-      setAiMessage(data.content.map(c => c.text || "").join("\n").trim());
-    } catch { setAiError("Generation failed — check connection and try again."); }
-    finally { setAiLoading(false); }
+      const text = data.content.map(c => c.text || "").join("\n").trim();
+      setAiMessage(text);
+    } catch (err) {
+      setAiError("Generation failed — check your connection and try again.");
+    } finally {
+      setAiLoading(false);
+    }
   }
-   
 
-  function copyMsg() { navigator.clipboard.writeText(aiMessage); setCopied(true); setTimeout(() => setCopied(false), 2000); }
+  function copyMsg() {
+    navigator.clipboard.writeText(aiMessage);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  }
 
   const S = {
     btn: (bg, ex = {}) => ({ background: bg, color: "#e2e8f0", border: "none", borderRadius: 6, padding: "8px 16px", fontSize: 12, fontFamily: "inherit", cursor: "pointer", fontWeight: 600, ...ex }),
@@ -324,7 +408,8 @@ export default function App() {
               const v = getVerify(lead);
               const isScrubbed = v === "🌐 Has Website" || v === "🚫 Permanently Closed";
               return (
-                <tr key={lead.id} style={{ borderBottom: "1px solid #0f172a", background: i % 2 ? "#0b0f1a" : "transparent", opacity: isScrubbed ? 0.4 : 1 }}
+                <tr key={lead.id}
+                  style={{ borderBottom: "1px solid #0f172a", background: i % 2 ? "#0b0f1a" : "transparent", opacity: isScrubbed ? 0.4 : 1 }}
                   onMouseEnter={e => e.currentTarget.style.background = "#131929"}
                   onMouseLeave={e => e.currentTarget.style.background = i % 2 ? "#0b0f1a" : "transparent"}>
                   <td style={{ padding: "10px 12px" }}>
@@ -341,9 +426,12 @@ export default function App() {
                     <div style={{ display: "flex", gap: 4 }}>
                       <a href={`https://www.google.com/search?q=${encodeURIComponent(lead.name + " East Peoria IL")}`} target="_blank" rel="noopener noreferrer"
                         style={{ ...S.btn("#0f2a1a", { padding: "3px 8px", fontSize: 10, textDecoration: "none" }) }}>🔍</a>
-                      <button onClick={() => updateLead(lead.id, "verify_status", "✅ Active — No Website")} style={S.btn(v === "✅ Active — No Website" ? "#064e3b" : "#0f2a1a", { padding: "3px 8px", fontSize: 10 })}>✅</button>
-                      <button onClick={() => updateLead(lead.id, "verify_status", "🌐 Has Website")} style={S.btn(v === "🌐 Has Website" ? "#451a03" : "#1a1200", { padding: "3px 8px", fontSize: 10 })}>🌐</button>
-                      <button onClick={() => updateLead(lead.id, "verify_status", "🚫 Permanently Closed")} style={S.btn(v === "🚫 Permanently Closed" ? "#3b0a0a" : "#1a0a0a", { padding: "3px 8px", fontSize: 10 })}>🚫</button>
+                      <button onClick={() => updateLead(lead.id, "verify_status", "✅ Active — No Website")}
+                        style={S.btn(v === "✅ Active — No Website" ? "#064e3b" : "#0f2a1a", { padding: "3px 8px", fontSize: 10 })}>✅</button>
+                      <button onClick={() => updateLead(lead.id, "verify_status", "🌐 Has Website")}
+                        style={S.btn(v === "🌐 Has Website" ? "#451a03" : "#1a1200", { padding: "3px 8px", fontSize: 10 })}>🌐</button>
+                      <button onClick={() => updateLead(lead.id, "verify_status", "🚫 Permanently Closed")}
+                        style={S.btn(v === "🚫 Permanently Closed" ? "#3b0a0a" : "#1a0a0a", { padding: "3px 8px", fontSize: 10 })}>🚫</button>
                     </div>
                   </td>
                   <td style={{ padding: "10px 12px" }}>
@@ -373,7 +461,11 @@ export default function App() {
             <div style={{ marginBottom: 16 }}>
               <label style={S.lbl}>VERIFICATION</label>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 6 }}>
-                {[["✅ Active — No Website", "#064e3b", "#10b981"], ["🌐 Has Website", "#451a03", "#f59e0b"], ["🚫 Permanently Closed", "#3b0a0a", "#ef4444"]].map(([status, bg, color]) => (
+                {[
+                  ["✅ Active — No Website", "#064e3b", "#10b981"],
+                  ["🌐 Has Website", "#451a03", "#f59e0b"],
+                  ["🚫 Permanently Closed", "#3b0a0a", "#ef4444"]
+                ].map(([status, bg, color]) => (
                   <button key={status} onClick={() => updateLead(selected.id, "verify_status", status)}
                     style={{ background: getVerify(selected) === status ? bg : "#1e293b", border: `1px solid ${getVerify(selected) === status ? color : "#334155"}`, borderRadius: 6, padding: "10px 6px", color: getVerify(selected) === status ? color : "#64748b", fontSize: 10, fontFamily: "inherit", cursor: "pointer", fontWeight: 700, lineHeight: 1.4, textAlign: "center" }}>
                     {status}
@@ -383,12 +475,14 @@ export default function App() {
             </div>
 
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 14 }}>
-              <div><label style={S.lbl}>STATUS</label>
+              <div>
+                <label style={S.lbl}>STATUS</label>
                 <select value={selected.status} onChange={e => updateLead(selected.id, "status", e.target.value)} style={{ ...S.sel, width: "100%", padding: "8px 10px" }}>
                   {STATUS_OPTIONS.map(s => <option key={s}>{s}</option>)}
                 </select>
               </div>
-              <div><label style={S.lbl}>PRIORITY</label>
+              <div>
+                <label style={S.lbl}>PRIORITY</label>
                 <select value={selected.priority} onChange={e => updateLead(selected.id, "priority", e.target.value)} style={{ ...S.sel, width: "100%", padding: "8px 10px" }}>
                   <option>High</option><option>Medium</option><option>Low</option>
                 </select>
@@ -414,34 +508,52 @@ export default function App() {
             {/* AI GENERATOR */}
             <div style={{ background: "#080c14", border: "1px solid #1e293b", borderRadius: 10, padding: 16, marginBottom: 16 }}>
               <div style={{ fontSize: 10, letterSpacing: "0.3em", color: "#6366f1", marginBottom: 12, fontWeight: 700 }}>✦ AI OUTREACH GENERATOR</div>
+
               <div style={{ marginBottom: 8 }}>
                 <label style={S.lbl}>MESSAGE TYPE</label>
-                <select value={outreachType} onChange={e => setOutreachType(e.target.value)} style={{ ...S.sel, width: "100%", padding: "8px 10px" }}>
+                <select value={outreachType} onChange={e => { setOutreachType(e.target.value); setAiMessage(""); }} style={{ ...S.sel, width: "100%", padding: "8px 10px" }}>
                   {OUTREACH_TYPES.map(t => <option key={t}>{t}</option>)}
                 </select>
               </div>
+
               <div style={{ marginBottom: 8 }}>
                 <label style={S.lbl}>YOUR NAME <span style={{ color: "#334155" }}>(optional)</span></label>
-                <input value={yourName} onChange={e => setYourName(e.target.value)} placeholder="e.g. Marcus" style={{ ...S.inp, width: "100%", boxSizing: "border-box" }} />
+                <input value={yourName} onChange={e => setYourName(e.target.value)} placeholder="e.g. Marcus"
+                  style={{ ...S.inp, width: "100%", boxSizing: "border-box" }} />
               </div>
+
               <div style={{ marginBottom: 12 }}>
                 <label style={S.lbl}>EXTRA CONTEXT <span style={{ color: "#334155" }}>(optional)</span></label>
-                <input value={extraContext} onChange={e => setExtraContext(e.target.value)} placeholder="e.g. Busy on weekends" style={{ ...S.inp, width: "100%", boxSizing: "border-box" }} />
+                <input value={extraContext} onChange={e => setExtraContext(e.target.value)} placeholder="e.g. Busy on weekends, family owned since 1998"
+                  style={{ ...S.inp, width: "100%", boxSizing: "border-box" }} />
               </div>
-              <button onClick={generateOutreach} disabled={aiLoading} style={{ ...S.btn(aiLoading ? "#1a1f2e" : "#4f46e5"), width: "100%", fontSize: 12, opacity: aiLoading ? 0.65 : 1 }}>
+
+              <button onClick={generateOutreach} disabled={aiLoading}
+                style={{ ...S.btn(aiLoading ? "#1a1f2e" : "#4f46e5"), width: "100%", fontSize: 12, opacity: aiLoading ? 0.65 : 1 }}>
                 {aiLoading ? "⟳  Generating..." : `✦ Generate ${outreachType}`}
               </button>
-              {aiError && <div style={{ marginTop: 8, fontSize: 11, color: "#f87171", background: "#1f0a0a", padding: "8px 12px", borderRadius: 6 }}>{aiError}</div>}
+
+              {aiError && (
+                <div style={{ marginTop: 8, fontSize: 11, color: "#f87171", background: "#1f0a0a", padding: "8px 12px", borderRadius: 6 }}>
+                  {aiError}
+                </div>
+              )}
+
               {aiMessage && !aiLoading && (
                 <div style={{ marginTop: 12 }}>
-                  <div style={{ background: "#0f172a", border: "1px solid #1e293b", borderLeft: "3px solid #6366f1", borderRadius: 6, padding: "12px 14px", fontSize: 12, lineHeight: 1.8, color: "#cbd5e1", whiteSpace: "pre-wrap", maxHeight: 220, overflowY: "auto" }}>{aiMessage}</div>
+                  <div style={{ background: "#0f172a", border: "1px solid #1e293b", borderLeft: "3px solid #6366f1", borderRadius: 6, padding: "12px 14px", fontSize: 12, lineHeight: 1.8, color: "#cbd5e1", whiteSpace: "pre-wrap", maxHeight: 280, overflowY: "auto" }}>
+                    {aiMessage}
+                  </div>
                   <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
-                    <button onClick={copyMsg} style={{ ...S.btn(copied ? "#064e3b" : "#4f46e5"), flex: 1, fontSize: 11 }}>{copied ? "✅ Copied!" : "Copy"}</button>
+                    <button onClick={copyMsg} style={{ ...S.btn(copied ? "#064e3b" : "#4f46e5"), flex: 1, fontSize: 11 }}>
+                      {copied ? "✅ Copied!" : "Copy"}
+                    </button>
                     <button onClick={generateOutreach} style={{ ...S.btn("#1e293b"), flex: 1, fontSize: 11 }}>↻ Redo</button>
                   </div>
                 </div>
               )}
             </div>
+
             <button onClick={() => setSelected(null)} style={{ ...S.btn("#1a1f2e"), width: "100%", fontSize: 11 }}>✕ Close</button>
           </div>
         </div>
@@ -456,9 +568,12 @@ export default function App() {
             <div style={{ fontSize: 11, color: "#475569", marginBottom: 14, lineHeight: 1.6 }}>
               Ask Claude: <span style={{ color: "#818cf8" }}>"Give me 20 East Peoria businesses with no website in the [category] category as a JSON array with name and category fields"</span> — then paste the result below.
             </div>
-            <textarea value={importText} onChange={e => setImportText(e.target.value)} rows={8} placeholder={`[\n  { "name": "Smith Roofing", "category": "Roofing" },\n  { "name": "East Peoria Alterations", "category": "Clothing" }\n]`}
+            <textarea value={importText} onChange={e => setImportText(e.target.value)} rows={8}
+              placeholder={'[\n  { "name": "Smith Roofing", "category": "Roofing" },\n  { "name": "East Peoria Alterations", "category": "Clothing" }\n]'}
               style={{ ...S.inp, width: "100%", resize: "vertical", boxSizing: "border-box", fontSize: 11, lineHeight: 1.6 }} />
-            {importError && <div style={{ marginTop: 8, fontSize: 11, color: "#f87171", background: "#1f0a0a", padding: "8px 12px", borderRadius: 6 }}>{importError}</div>}
+            {importError && (
+              <div style={{ marginTop: 8, fontSize: 11, color: "#f87171", background: "#1f0a0a", padding: "8px 12px", borderRadius: 6 }}>{importError}</div>
+            )}
             <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
               <button onClick={importLeads} disabled={importing} style={{ ...S.btn("#0f766e"), flex: 1, opacity: importing ? 0.6 : 1 }}>
                 {importing ? "Importing..." : "Import Leads"}

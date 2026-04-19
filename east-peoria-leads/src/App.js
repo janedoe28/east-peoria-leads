@@ -300,14 +300,10 @@ ${channelInstructions[outreachType]}
 IMPORTANT: Write ONLY the requested script or message. Do not include any introduction, explanation, or commentary before or after. Start directly with the content.`;
 
     try {
-      const res = await fetch("https://api.anthropic.com/v1/messages", {
+      const res = await fetch("/.netlify/functions/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          model: "claude-sonnet-4-20250514",
-          max_tokens: 1500,
-          messages: [{ role: "user", content: prompt }]
-        }),
+        body: JSON.stringify({ prompt }),
       });
       const data = await res.json();
       if (data.error) throw new Error(data.error.message);

@@ -156,29 +156,89 @@ export default function App() {
   async function generateOutreach() {
     if (!selected) return;
     setAiLoading(true); setAiError(""); setAiMessage("");
-    const prompt = `You are an expert local business sales copywriter. Write a highly personalized ${outreachType} for someone selling website design services to small businesses in East Peoria, Illinois.
-Business: ${selected.name}
-Category: ${selected.category}
-${yourName ? `Sender: ${yourName}` : "Use [Your Name] as placeholder."}
-${extraContext ? `Context: ${extraContext}` : ""}
-This business has NO website. Goal: get a 10-minute meeting.
-- Warm, LOCAL tone
-- Reference their industry naturally
-- Highlight cost of being invisible on Google
-- Low-pressure CTA
-- SMS: under 160 chars | Phone: include objection handle | Door knock: neighbor tone
-Write ONLY the message. No labels or preamble.`;
+   
+    const channelInstructions = {
+      "Cold Email": `Write a cold email with:
+  - Subject line on the first line starting with "Subject: "
+  - A blank line after the subject
+  - Opening that references something specific about their ${selected.category} business
+  - 2-3 short paragraphs max, no fluff
+  - A specific call to action asking for a 15-minute call this week
+  - Professional but warm sign-off with sender name
+  - Total length: under 150 words`,
+   
+      "Phone Script": `Write a phone call script with:
+  - An opening line that gets past "who is this?"
+  - A clear 1-sentence value statement
+  - One open-ended question to get them talking
+  - A response to the objection "I don't think I need a website"
+  - A response to the objection "I can't afford it right now"
+  - A closing that books a specific next step
+  - Format with labels like OPENER:, VALUE STATEMENT:, QUESTION:, OBJECTION 1:, OBJECTION 2:, CLOSE:`,
+   
+      "Door Knock Script": `Write a door knock script with:
+  - An opening that doesn't sound like a salesperson — sound like a neighbor
+  - Reference something you "noticed" about their business in passing
+  - One question that makes them think about customers they're missing
+  - A way to leave something behind if they're busy (a card, a note)
+  - Keep it under 60 seconds to read aloud
+  - Conversational, no jargon, no pitch energy`,
+   
+      "SMS / Text": `Write 3 different SMS text messages:
+  - Each must be under 160 characters
+  - Each takes a different angle: 1) curiosity, 2) social proof, 3) direct offer
+  - No links, no emojis unless they feel natural
+  - Sound like a real person texting, not a marketing blast
+  - Label them TEXT 1:, TEXT 2:, TEXT 3:`,
+   
+      "Facebook DM": `Write a Facebook DM message with:
+  - Opening that references their Facebook page or something they posted
+  - Casual, friendly tone — like messaging someone you kind of know
+  - One specific pain point relevant to ${selected.category} businesses
+  - Soft CTA — not "buy now" but "would you be open to a quick chat?"
+  - Under 100 words
+  - No formal sign-off, just a first name`,
+    };
+   
+    const prompt = `You are an expert local business sales copywriter specializing in getting small businesses their first website. You know East Peoria, Illinois well — it's a working class river town where people value straight talk and local connection over corporate polish.
+   
+  Business you are writing for:
+  - Name: ${selected.name}
+  - Industry: ${selected.category}
+  - Location: East Peoria, IL
+  - Website status: NONE — they have zero online presence
+  ${yourName ? `- Person reaching out: ${yourName}` : "- Use [Your Name] as placeholder"}
+  ${extraContext ? `- Important context: ${extraContext}` : ""}
+   
+  The goal of this outreach is to start a conversation — not close a sale. Get them to agree to 10 minutes of their time.
+   
+  Key pain points for a ${selected.category} business with no website:
+  - Competitors are showing up on Google and they are not
+  - People search before they visit — if you're not there, you don't exist
+  - Word of mouth alone has a ceiling
+  - They are leaving money on the table every single day
+   
+  ${channelInstructions[outreachType]}
+   
+  Write ONLY the requested content. No preamble, no explanation, no meta-commentary. Just the script or message, ready to use.`;
+   
     try {
       const res = await fetch("https://api.anthropic.com/v1/messages", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ model: "claude-sonnet-4-20250514", max_tokens: 1000, messages: [{ role: "user", content: prompt }] }),
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model: "claude-sonnet-4-20250514",
+          max_tokens: 1500,
+          messages: [{ role: "user", content: prompt }]
+        }),
       });
       const data = await res.json();
       if (data.error) throw new Error(data.error.message);
       setAiMessage(data.content.map(c => c.text || "").join("\n").trim());
-    } catch { setAiError("Generation failed — try again."); }
+    } catch { setAiError("Generation failed — check connection and try again."); }
     finally { setAiLoading(false); }
   }
+   
 
   function copyMsg() { navigator.clipboard.writeText(aiMessage); setCopied(true); setTimeout(() => setCopied(false), 2000); }
 

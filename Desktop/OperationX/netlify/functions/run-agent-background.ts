@@ -89,8 +89,7 @@ export const handler: BackgroundHandler = async (event) => {
     return;
   }
 
-  const agentArr = task.agents as unknown as { role: string; company_id: string; autonomy_level: number }[];
-  const agent = agentArr[0];
+  const agent = task.agents as unknown as { role: string; company_id: string; autonomy_level: number };
   const ctx: AgentContext = {
     taskId:        task.id,
     projectId:     task.project_id,

@@ -72,7 +72,7 @@ export default async function handler() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ task_id: task.id }),
         });
-        console.log(`[heartbeat] dispatched task ${task.id} (${(task.agents as unknown as { role: string }[])[0]?.role})`);
+        console.log(`[heartbeat] dispatched task ${task.id} (${(task.agents as unknown as { role: string }).role})`);
       } catch (fetchErr) {
         console.error(`[heartbeat] failed to dispatch task ${task.id}:`, fetchErr);
         // Revert to queued so it gets picked up next tick
